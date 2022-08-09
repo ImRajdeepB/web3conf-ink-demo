@@ -3,78 +3,151 @@
 use ink_lang as ink;
 
 #[ink::contract]
-mod token {
+pub mod token {
+    use ink_storage::{traits::SpreadAllocate, Mapping};
 
     /// Defines the storage of your contract.
     /// Add new fields to the below struct in order
     /// to add new static storage fields to your contract.
     #[ink(storage)]
+    #[derive(SpreadAllocate)]
     pub struct Token {
-        /// Stores a single `bool` value on the storage.
-        value: bool,
+        /// total number of tokens in circulation
+        total_supply: Balance,
+        /// owner, amount
+        balances: Mapping<AccountId, Balance>,
+        /// (owner, spender), amount
+        allowances: Mapping<(AccountId, AccountId), Balance>,
+    }
+
+    /// Event emitted when a token transfer occurs.
+    #[ink(event)]
+    pub struct Transfer {
+        #[ink(topic)]
+        from: Option<AccountId>,
+        #[ink(topic)]
+        to: Option<AccountId>,
+        value: Balance,
+    }
+
+    /// Event emitted when an approval occurs that `spender` is allowed to withdraw
+    /// up to the amount of `value` tokens from `owner`.
+    #[ink(event)]
+    pub struct Approval {
+        #[ink(topic)]
+        owner: AccountId,
+        #[ink(topic)]
+        spender: AccountId,
+        value: Balance,
     }
 
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub enum Error {}
+    pub enum Error {
+        InsufficientBalance,
+        InsufficientAllowance,
+    }
 
     pub type Result<T> = core::result::Result<T, Error>;
 
     impl Token {
-        /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
-        pub fn new(init_value: bool) -> Self {
-            Self { value: init_value }
+        pub fn new(initial_supply: Balance) -> Self {
+            ink_lang::utils::initialize_contract(|c| Self::init(c, initial_supply))
         }
 
-        /// Constructor that initializes the `bool` value to `false`.
-        ///
-        /// Constructors can delegate to other constructors.
-        #[ink(constructor)]
-        pub fn default() -> Self {
-            Self::new(Default::default())
+        fn init(&mut self, initial_supply: Balance) {
+            let caller = Self::env().caller();
+
+            self.total_supply = initial_supply;
+            self.balances.insert(&caller, &initial_supply);
+
+            Self::env().emit_event(Transfer {
+                from: None,
+                to: Some(caller),
+                value: initial_supply,
+            });
         }
 
-        /// A message that can be called on instantiated contracts.
-        /// This one flips the value of the stored `bool` from `true`
-        /// to `false` and vice versa.
         #[ink(message)]
-        pub fn flip(&mut self) {
-            self.value = !self.value;
+        pub fn get_total_supply(&self) -> Balance {
+            self.total_supply
         }
 
-        /// Simply returns the current value of our `bool`.
         #[ink(message)]
-        pub fn get(&self) -> bool {
-            self.value
-        }
-    }
-
-    /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
-    /// module and test functions are marked with a `#[test]` attribute.
-    /// The below code is technically just normal Rust code.
-    #[cfg(test)]
-    mod tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
-        use super::*;
-
-        /// Imports `ink_lang` so we can use `#[ink::test]`.
-        use ink_lang as ink;
-
-        /// We test if the default constructor does its job.
-        #[ink::test]
-        fn default_works() {
-            let token = Token::default();
-            assert_eq!(token.get(), false);
+        pub fn get_balance_of(&self, owner: AccountId) -> Balance {
+            self.balances.get(&owner).unwrap_or_default()
         }
 
-        /// We test a simple use case of our contract.
-        #[ink::test]
-        fn it_works() {
-            let mut token = Token::new(false);
-            assert_eq!(token.get(), false);
-            token.flip();
-            assert_eq!(token.get(), true);
+        #[ink(message)]
+        pub fn get_allowance_of(&self, owner: AccountId, spender: AccountId) -> Balance {
+            self.allowances.get((&owner, &spender)).unwrap_or_default()
+        }
+
+        #[ink(message)]
+        pub fn approve(&mut self, spender: AccountId, value: Balance) -> Result<()> {
+            let owner = self.env().caller();
+            self.allowances.insert((&owner, &spender), &value);
+
+            self.env().emit_event(Approval {
+                owner,
+                spender,
+                value,
+            });
+
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn transfer(&mut self, to: AccountId, amount: Balance) -> Result<()> {
+            let from = self.env().caller();
+            self.transfer_from_to(from, to, amount)
+        }
+
+        pub fn transfer_from_to(
+            &mut self,
+            from: AccountId,
+            to: AccountId,
+            amount: Balance,
+        ) -> Result<()> {
+            let from_bal = self.get_balance_of(from);
+            if from_bal < amount {
+                return Err(Error::InsufficientBalance);
+            }
+            self.balances.insert(from, &(from_bal - amount));
+
+            let to_bal = self.get_balance_of(to);
+
+            self.balances.insert(to, &(to_bal + amount));
+
+            self.env().emit_event(Transfer {
+                from: Some(from),
+                to: Some(to),
+                value: amount,
+            });
+
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn transfer_from(
+            &mut self,
+            from: AccountId,
+            to: AccountId,
+            amount: Balance,
+        ) -> Result<()> {
+            let spender = self.env().caller();
+            let allowance = self.get_allowance_of(from, spender);
+            if allowance < amount {
+                return Err(Error::InsufficientAllowance);
+            }
+
+            self.transfer_from_to(from, to, amount)?;
+
+            self.allowances
+                .insert((&from, &spender), &(allowance - amount));
+
+            Ok(())
         }
     }
 }
