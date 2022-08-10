@@ -21,11 +21,19 @@ cargo install cargo-contract --force
 cargo contract --help
 ```
 
+Compile the contracts
+
 ```
 make build
 ```
 
 Download swanky node: https://github.com/AstarNetwork/swanky-node/releases
+
+Run swanky node
+
+```
+./swanky-node --dev
+```
 
 ## Credits
 
