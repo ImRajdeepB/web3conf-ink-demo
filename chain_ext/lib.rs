@@ -100,7 +100,7 @@ impl Environment for CustomEnvironment {
 }
 
 #[ink::contract(env = crate::CustomEnvironment)]
-mod chain_ext {
+mod dapp_staking_extension {
     use super::{DSError, EraInfo};
 
     #[ink(storage)]

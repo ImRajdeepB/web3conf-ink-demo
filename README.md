@@ -35,6 +35,16 @@ Run swanky node
 ./swanky-node --dev
 ```
 
+```
+git clone https://github.com/AstarNetwork/swanky-node.git
+
+git checkout dapp-staking-chain-extension
+
+cargo build --release
+
+./target/release/swanky-node --dev
+```
+
 ## Credits
 
 - [Astar Dapp Staking example](https://github.com/AstarNetwork/dApp-Staking-Workshop)
